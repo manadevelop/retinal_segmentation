@@ -1,0 +1,44 @@
+# Outputs y resultados (regenerables, peso elevado)
+outputs/
+results/
+logs/
+
+# Pesos del modelo
+*.pt
+*.pth
+*.ckpt
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Notebooks
+.ipynb_checkpoints/
+*.nbconvert.ipynb
+
+# IDE / editores
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Distribución
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Experimentos
+wandb/
+runs/
+mlruns/

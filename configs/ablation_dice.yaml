@@ -1,0 +1,35 @@
+# configs/ablation_dice.yaml — Ablación: pérdida Dice pura
+
+experiment_name: "ablation_dice"
+seed: 42
+use_wandb: false
+output_dir: "outputs"
+
+data:
+  dataset:    "drive"
+  drive_root: "data/drive"
+  img_size:   512
+  augmentation: "aggressive"
+  use_clahe:  true
+
+model:
+  name:          "attention_unet"
+  in_channels:   3
+  out_channels:  1
+  base_channels: 64
+  depth:         4
+  bilinear:      true
+  dropout_rate:  0.1
+
+training:
+  epochs:       50
+  batch_size:   4
+  val_batch_size: 2
+  num_workers:  2
+  lr:           1.0e-4
+  lr_min:       1.0e-7
+  weight_decay: 1.0e-4
+  loss:         "dice"
+  dice_smooth:  1.0
+
+early_stopping_patience: 15
