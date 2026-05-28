@@ -2,11 +2,10 @@
 
 # Segmentación de Vasos Retinianos para Detección de Retinopatía Diabética
 
-## Pregunta 2 — Examen Parcial
+Proyecto correspondiente a la **Pregunta 2 del Examen Parcial** del curso **Redes Neuronales y Aprendizaje Profundo** de la Maestría en Inteligencia Artificial de la Universidad Nacional de Ingeniería.
 
-**Curso:** Redes Neuronales y Aprendizaje Profundo    
 **Docente:** Ph.D. Aldo Camargo  
-**Universidad Nacional de Ingeniería — Maestría en Inteligencia Artificial**
+**Repositorio:** <https://github.com/manadevelop/retinal_segmentation>
 
 **Integrantes:**
 
@@ -15,343 +14,432 @@
 - Edwin Jhon Minchán Ramos
 - Marco Antonio Nina Aguilar
 
-**Repositorio:** <https://github.com/manadevelop/retinal_segmentation>
+---
+
+## 1. Descripción del problema
+
+La retinopatía diabética es una de las principales causas de ceguera prevenible. Su detección temprana se apoya en el análisis de fotografías de fondo de ojo, donde la segmentación de la red vascular permite estudiar características como calibre, tortuosidad, ramificaciones y presencia de vasos finos.
+
+Este proyecto implementa un pipeline completo de **segmentación binaria píxel a píxel** de vasos retinianos usando **U-Net** y **Attention U-Net** implementadas en PyTorch. El objetivo es segmentar cada píxel de una imagen de fondo de ojo como:
+
+- **vaso sanguíneo**, o
+- **fondo / no vaso**.
+
+Además del entrenamiento en DRIVE, el proyecto analiza la degradación del rendimiento al evaluar sobre CHASE_DB1, un dominio diferente, e implementa estrategias de mitigación como **CLAHE** y **fine-tuning** sobre una pequeña fracción del dominio objetivo.
 
 ---
 
-## Enunciado del problema
+## 2. Entregables cubiertos
 
-La retinopatía diabética es una de las principales causas mundiales de ceguera prevenible. Su tamizaje temprano depende de la segmentación precisa de la red vascular en fotografías de fondo de ojo (imágenes de fundus): un problema de **predicción densa**, donde el modelo debe asignar a cada píxel una etiqueta binaria (*vaso* o *fondo*).
-
-Este proyecto implementa una **U-Net** y una **Attention U-Net** desde cero en PyTorch para resolver esta tarea, con dos focos:
-
-1. **Desempeño en distribución**: alcanzar un F1/Dice competitivo en DRIVE, el benchmark de referencia, con un estudio de ablación que justifique las decisiones arquitectónicas y de función de pérdida.
-2. **Generalización entre dominios**: cuantificar la degradación del modelo al evaluarlo en imágenes adquiridas con una cámara de fundus distinta (CHASE_DB1) e implementar al menos una estrategia de mitigación de dicha brecha (preprocesamiento CLAHE, *test-time augmentation* o ajuste fino sobre el dominio objetivo).
-
----
-
-## Conjuntos de datos
-
-Se utilizan los tres datasets públicos de referencia indicados en el examen:
-
-### DRIVE — Digital Retinal Images for Vessel Extraction
-- **40 imágenes** de fundus con máscaras manuales de vasos y una división fija de entrenamiento/prueba (20/20).
-- Benchmark estándar del área.
-- Fuente oficial: <https://drive.grand-challenge.org/>
-- Kaggle: <https://www.kaggle.com/datasets/umairinayat/retinal-vessel-segmentation-datasets>
-
-### STARE — Structured Analysis of the Retina
-- **20 imágenes** con **dos conjuntos independientes de anotaciones** (Adam Hoover y Valentina Kouznetsova).
-- Permite estimar la concordancia entre anotadores como un *techo humano* contra el cual comparar el modelo.
-- Fuente oficial: <https://cecas.clemson.edu/~ahoover/stare/>
-- Kaggle: <https://www.kaggle.com/datasets/umairinayat/retinal-vessel-segmentation-datasets>
-
-### CHASE_DB1
-- **28 imágenes** adquiridas con una cámara de fundus diferente a DRIVE.
-- Ideal para el experimento de generalización entre conjuntos (entregable #4).
-- Fuente oficial original: <https://blogs.kingston.ac.uk/retinal/chasedb1/> (sitio actualmente caído)
-- Espejo institucional: <https://researchdata.kingston.ac.uk/96/>
-- Kaggle: <https://www.kaggle.com/datasets/khoongweihao/chasedb1>
-
-
-### Nota crítica sobre DRIVE test y métricas locales
-
-La página oficial de DRIVE indica que el conjunto completo tiene 40 imágenes divididas en 20 de entrenamiento y 20 de prueba, pero también aclara que para los casos de prueba no se publican las anotaciones manuales; las predicciones deben enviarse al sitio para evaluación oficial. Por eso, este repositorio implementa una política reproducible:
-
-- Si `data/drive/test/1st_manual/` existe, el pipeline usa el split fijo oficial para evaluación.
-- Si `data/drive/test/1st_manual/` no existe, el pipeline no crea máscaras vacías ni reporta métricas falsas. En su lugar, usa un holdout interno estratificado desde `data/drive/training/` para obtener métricas locales válidas con ground truth. El conjunto `test/images` puede usarse para generar predicciones, pero no para calcular sensibilidad/F1/AUC sin anotaciones.
-
-Antes de entrenar, `run_all.sh` ejecuta `scripts/validate_datasets.py`, que verifica que las máscaras de vasos tengan píxeles positivos (`mask_sum > 0`). Esto evita resultados inválidos como `F1=0` y `AUC=nan` causados por máscaras faltantes o mal binarizadas.
-
-### Justificación del uso de espejos en Kaggle
-
-El examen exige que el código se ejecute *de extremo a extremo con un único comando*. Las fuentes oficiales de los tres datasets presentan obstáculos que rompen este requisito al automatizar la descarga:
-
-- **DRIVE** requiere registro manual en grand-challenge.org y aceptación de términos antes de habilitar la descarga; no expone una URL pública directa.
-- El sitio histórico de **CHASE_DB1** (`blogs.kingston.ac.uk/retinal/chasedb1/`) está caído; existe un espejo institucional, pero una sola URL de respaldo es frágil.
-- **STARE** distribuye los archivos `.ppm` uno por uno desde el servidor de Clemson; no hay un zip único.
-
-Por estas razones, el script `scripts/setup_datasets.py` descarga los datasets desde **espejos públicos en Kaggle** que la comunidad académica utiliza habitualmente. Los tres mirrors preservan el contenido y la licencia de las fuentes originales; solo cambia la mecánica de descarga. Esto permite cumplir la consigna del comando único sin perder trazabilidad académica del origen de los datos.
-
-| Dataset    | Mirror usado (Kaggle)                                              | Fuente oficial                                |
-|------------|--------------------------------------------------------------------|-----------------------------------------------|
-| DRIVE      | `umairinayat/retinal-vessel-segmentation-datasets`                 | grand-challenge.org                           |
-| STARE      | `umairinayat/retinal-vessel-segmentation-datasets`                 | cecas.clemson.edu/~ahoover/stare/             |
-| CHASE_DB1  | `khoongweihao/chasedb1`                                            | researchdata.kingston.ac.uk/96/               |
+| # | Entregable de la Pregunta 2 | Estado en el proyecto |
+|---|---|---|
+| 1 | Implementación personalizada de U-Net en PyTorch | `src/models/unet.py` y `src/models/attention_unet.py` |
+| 2 | Ablación de arquitectura o entrenamiento | U-Net vs Attention U-Net; BCE vs Dice vs BCE+Dice |
+| 3 | Evaluación en DRIVE con Sensibilidad, Especificidad, F1 y AUC-ROC | `outputs/*/test_metrics.json` y `scripts/evaluate.py` |
+| 4 | Generalización DRIVE → CHASE_DB1 | `scripts/domain_adaptation.py` |
+| 5 | Análisis de vasos finos vs gruesos | `scripts/vessel_thickness_analysis.py` |
+| 6 | Estrategia de mitigación de dominio | CLAHE y fine-tuning con 25% de CHASE_DB1 |
+| 7 | Ejecución extremo a extremo con un único comando | `bash run_all.sh` |
+| 8 | Especificación de entorno | `requirements.txt` |
 
 ---
 
-## Entregables requeridos
+## 3. Datasets utilizados
 
-Los seis entregables que pide el examen y su ubicación en este repositorio:
+Los datasets **no se versionan en GitHub**. Deben colocarse manualmente en Google Drive o en la carpeta local `data/`, según el modo de ejecución.
 
-| # | Entregable                                                                    | Implementación                                                              |
-|---|-------------------------------------------------------------------------------|-----------------------------------------------------------------------------|
-| 1 | Implementación personalizada de U-Net en PyTorch, sin copiar bibliotecas      | `src/models/unet.py` (U-Net base) + `src/models/attention_unet.py` (variante con Attention Gates) |
-| 2 | Estudio de ablación sobre ≥ 2 decisiones arquitectónicas / de entrenamiento   | Arquitectura: U-Net vs Attention U-Net. Pérdida: BCE / Dice / BCE+Dice combinada. Configs en `configs/*.yaml` |
-| 3 | Evaluación in-distribution sobre DRIVE (sensibilidad, especificidad, F1, AUC) | `scripts/evaluate.py` → `results/<exp>/test_metrics.json` + figuras de ROC y análisis de fallos |
-| 4 | Experimento de generalización entre conjuntos: entrenar en DRIVE, evaluar en CHASE_DB1; reportar brecha y analizar causa | `scripts/domain_adaptation.py` → `results/domain_adaptation/domain_adaptation_results.json` |
-| 5 | Análisis cualitativo de fallos por tipo de vaso (capilares finos vs arterias grandes) con explicación arquitectónica | `scripts/vessel_thickness_analysis.py` (estratificación por radio vía `distance_transform_edt`) + `scripts/visualize_attention.py` (mapas de atención de cada nivel del decoder) |
-| 6 | Estrategia de adaptación de dominio o preprocesamiento, con evidencia de su efecto sobre la brecha | Dos estrategias implementadas en `scripts/domain_adaptation.py`: preprocesamiento CLAHE y fine-tuning sobre subconjunto del dominio objetivo |
+### 3.1 DRIVE
 
-**Análisis bonus** (más allá de los entregables mínimos):
+Fuente oficial: <https://drive.grand-challenge.org/>
 
-- Concordancia entre anotadores en STARE (Dice, IoU, Cohen's kappa) como techo humano: `scripts/inter_annotator_stare.py`.
-- Visualización de los mapas de atención α de cada `AttentionGate` superpuestos sobre la imagen de entrada: `scripts/visualize_attention.py`.
+En este proyecto se usó una copia manual organizada en Google Drive con la siguiente estructura real:
 
----
-
-## Resumen del proyecto
-
-| Aspecto                | Detalle                                              |
-|------------------------|------------------------------------------------------|
-| Tarea                  | Segmentación binaria píxel-a-píxel                   |
-| Arquitecturas          | U-Net (base) + Attention U-Net (principal)           |
-| Dataset principal      | DRIVE (40 imágenes, split fijo 20/20)                |
-| Datasets adicionales   | CHASE_DB1 (cross-domain), STARE (inter-anotador)     |
-| Pérdidas evaluadas     | BCE, Dice, BCE+Dice combinada                        |
-| Estrategias de dominio | Preprocesamiento CLAHE, fine-tuning                  |
-
----
-
-## Estructura del repositorio
-
+```text
+EP01/pregunta2/datasets/DRIVE/
+├── datasets/
+│   ├── training/
+│   │   ├── images/       # imágenes .tif
+│   │   ├── mask/         # máscaras FOV .gif
+│   │   └── 1st_manual/   # máscaras manuales de vasos .gif
+│   └── test/
+│       ├── images/       # imágenes .tif
+│       └── mask/         # máscaras FOV .gif
 ```
+
+> Nota metodológica: la partición `test` de DRIVE en esta copia no contiene `1st_manual`. La carpeta `mask/` corresponde al campo de visión retinal, no al ground truth de vasos. Por eso el pipeline usa un holdout interno desde `training/` para calcular métricas locales válidas cuando no existe `test/1st_manual/`.
+
+### 3.2 CHASE_DB1
+
+Fuente institucional: <https://researchdata.kingston.ac.uk/96/>
+
+CHASE_DB1 fue descargado y organizado manualmente. La estructura usada fue:
+
+```text
+EP01/pregunta2/datasets/CHASE_DB1/new/chase/test/test/
+├── images/       # imágenes .tif
+├── mask/         # máscaras FOV .tif
+├── 1st_manual/   # máscaras manuales .tif
+└── 2nd_manual/   # segundo anotador .png
+```
+
+En el pipeline se mapea a:
+
+```text
+data/chase_db1/
+├── images/       -> .../CHASE_DB1/new/chase/test/test/images
+├── labels/       -> .../CHASE_DB1/new/chase/test/test/1st_manual
+├── mask/         -> .../CHASE_DB1/new/chase/test/test/mask
+└── labels-2nd/   -> .../CHASE_DB1/new/chase/test/test/2nd_manual
+```
+
+### 3.3 STARE
+
+Fuente oficial: <https://cecas.clemson.edu/~ahoover/stare/>
+
+La estructura usada fue:
+
+```text
+EP01/pregunta2/datasets/STARE/
+├── images/
+└── masks/
+```
+
+En el pipeline se mapea a:
+
+```text
+data/stare/
+├── images/       -> .../STARE/images
+├── masks/        -> .../STARE/masks
+└── labels-ah/    -> .../STARE/masks
+```
+
+Si se dispone también de anotaciones VK, pueden agregarse como `data/stare/labels-vk/` para ejecutar el análisis inter-anotador. En la ejecución final de este proyecto, el análisis STARE AH/VK se considera complementario.
+
+---
+
+## 4. Estructura esperada del repositorio
+
+```text
 retinal_segmentation/
-├── README.md                        ← este archivo
-├── requirements.txt                 ← dependencias Python
-├── run_all.sh                       ← pipeline completo (un solo comando)
-├── colab_runner.ipynb               ← envoltorio para Google Colab
+├── README.md
+├── requirements.txt
+├── run_all.sh
+├── colab_runner.ipynb
 ├── .gitignore
-├── configs/                         ← configuraciones YAML por experimento
-│   ├── train_attention_unet.yaml    ← experimento principal
-│   ├── train_unet.yaml              ← ablación arquitectura
-│   ├── ablation_bce.yaml            ← ablación pérdida BCE
-│   ├── ablation_dice.yaml           ← ablación pérdida Dice
-│   └── ablation_combined.yaml       ← ablación pérdida combinada
+├── configs/
+│   ├── train_attention_unet.yaml
+│   ├── train_unet.yaml
+│   ├── ablation_bce.yaml
+│   ├── ablation_dice.yaml
+│   └── ablation_combined.yaml
 ├── src/
-│   ├── train.py                     ← script principal de entrenamiento
+│   ├── train.py
 │   ├── data/
-│   │   ├── dataset.py               ← DRIVE / STARE / CHASE_DB1
-│   │   └── transforms.py            ← augmentación, CLAHE, normalización
+│   │   ├── __init__.py
+│   │   ├── dataset.py
+│   │   └── transforms.py
 │   ├── models/
-│   │   ├── unet.py                  ← U-Net implementada desde cero
-│   │   └── attention_unet.py        ← Attention U-Net con Attention Gates
+│   │   ├── __init__.py
+│   │   ├── unet.py
+│   │   └── attention_unet.py
 │   └── utils/
-│       ├── losses.py                ← BCE / Dice / Combined
-│       ├── metrics.py               ← Sens, Spec, F1, AUC, IoU, Accuracy
-│       ├── trainer.py               ← bucle de entrenamiento + early stopping
-│       └── logger.py
+│       ├── __init__.py
+│       ├── checkpoint.py
+│       ├── logger.py
+│       ├── losses.py
+│       ├── metrics.py
+│       └── trainer.py
 ├── scripts/
-│   ├── setup_datasets.py            ← descarga automática desde Kaggle
-│   ├── validate_datasets.py         ← validación de estructura y máscaras antes de entrenar
-│   ├── evaluate.py                  ← evaluación + ROC + análisis de fallos
-│   ├── domain_adaptation.py         ← DRIVE→CHASE_DB1 + CLAHE + fine-tuning
-│   ├── vessel_thickness_analysis.py ← sensibilidad por grosor (entregable #5)
-│   ├── inter_annotator_stare.py     ← concordancia entre anotadores
-│   ├── plot_training_curves.py      ← curvas de entrenamiento
-│   └── visualize_attention.py       ← mapas de atención de los gates
-├── data/                            ← datasets (se descargan automáticamente)
-├── outputs/                         ← checkpoints, métricas e historial
-├── results/                         ← figuras y reportes finales
-└── reports/                         ← informe NeurIPS (PDF)
+│   ├── validate_datasets.py
+│   ├── evaluate.py
+│   ├── domain_adaptation.py
+│   ├── vessel_thickness_analysis.py
+│   ├── visualize_attention.py
+│   ├── plot_training_curves.py
+│   └── inter_annotator_stare.py
+├── data/       # no se sube a GitHub
+├── outputs/    # no se sube a GitHub
+├── results/    # no se sube a GitHub
+└── reports/
 ```
+
+Las carpetas `data/`, `outputs/` y `results/` están excluidas mediante `.gitignore` porque contienen datasets, checkpoints, métricas, figuras y artefactos generados.
 
 ---
 
-## Cómo ejecutar — un solo comando
+## 5. Ejecución recomendada en Google Colab
+
+La forma recomendada de ejecutar el proyecto es mediante:
+
+```text
+colab_runner.ipynb
+```
+
+### 5.1 Preparar Google Drive
+
+Antes de ejecutar, coloca los datasets en Google Drive así:
+
+```text
+MyDrive/
+└── EP01/
+    └── pregunta2/
+        └── datasets/
+            ├── DRIVE/
+            ├── CHASE_DB1/
+            └── STARE/
+```
+
+La estructura interna debe coincidir con lo indicado en la sección de datasets.
+
+### 5.2 Abrir el notebook
+
+Puedes abrir el notebook usando el botón **Open in Colab** de la parte superior del README o entrando manualmente a:
+
+```text
+https://colab.research.google.com/github/manadevelop/retinal_segmentation/blob/main/colab_runner.ipynb
+```
+
+### 5.3 Configurar GPU
+
+En Colab:
+
+```text
+Entorno de ejecución → Cambiar tipo de entorno de ejecución → GPU
+```
+
+Se recomienda usar **L4** o **T4**.
+
+### 5.4 Ejecutar celdas del notebook
+
+El notebook realiza automáticamente:
+
+1. Montaje de Google Drive.
+2. Clonación o actualización del repositorio.
+3. Creación de symlinks desde `data/` hacia las carpetas en Google Drive.
+4. Validación de estructura y máscaras.
+5. Ejecución del pipeline completo:
 
 ```bash
 bash run_all.sh
 ```
 
-Esto descarga los 3 datasets automáticamente desde Kaggle, entrena los 5 experimentos, ejecuta todos los análisis y genera el resumen final. Tiempo total: ~3 h en GPU L4, ~5-6 h en T4, ~10 min adicionales de descarga inicial.
+6. Verificación de archivos generados.
+7. Respaldo de resultados en Google Drive.
+8. Visualización resumida de métricas y mapas de atención.
+
+### 5.5 Dónde se guardan los resultados en Colab
+
+Durante la ejecución, los artefactos se generan en:
+
+```text
+/content/retinal_segmentation/outputs/
+/content/retinal_segmentation/results/
+```
+
+Luego el notebook los respalda en Google Drive:
+
+```text
+/content/drive/MyDrive/EP01/pregunta2/resultados/outputs/
+/content/drive/MyDrive/EP01/pregunta2/resultados/results/
+```
 
 ---
 
-## Configuración del entorno
+## 6. Ejecución local o en servidor
 
-El comando único requiere:
-
-### 1. Python 3.10+ y dependencias
+Si se ejecuta fuera de Colab, primero instala dependencias:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2. GPU NVIDIA con drivers CUDA (recomendado)
+Luego asegúrate de tener los datasets organizados así:
 
-CPU funciona pero es ~30× más lento. Para Colab, ver siguiente sección.
-
-### 3. Token de Kaggle (para descarga automática de datasets)
-
-Los datasets DRIVE, STARE y CHASE_DB1 se descargan desde mirrors públicos en Kaggle. Necesitas un token de API gratuito.
-
-Kaggle ofrece dos sistemas de autenticación; el script `setup_datasets.py` detecta automáticamente cualquiera de los dos:
-
-#### Opción A — Sistema nuevo (recomendado por Kaggle)
-
-1. Crea cuenta gratuita en <https://www.kaggle.com/account/login>
-2. Ve a <https://www.kaggle.com/settings/api>
-3. Click **Generate New Token** (sección "API Tokens (Recommended)")
-4. Copia el token completo (un string que empieza con `KGAT_...`)
-5. Guárdalo:
-
-```bash
-mkdir -p ~/.kaggle
-echo 'KGAT_tu_token_aqui' > ~/.kaggle/access_token
-chmod 600 ~/.kaggle/access_token
-```
-
-Alternativa: exportarlo como variable de entorno (útil para CI/CD):
-
-```bash
-export KAGGLE_API_TOKEN='KGAT_tu_token_aqui'
-```
-
-#### Opción B — Sistema legacy (`kaggle.json`)
-
-Sigue funcionando. Ve a la misma página y bajo **"Legacy API Credentials"** click **Create Legacy API Key**. Descarga `kaggle.json` (contiene `{"username": ..., "key": ...}`).
-
-```bash
-mkdir -p ~/.kaggle
-mv ~/Downloads/kaggle.json ~/.kaggle/
-chmod 600 ~/.kaggle/kaggle.json
-```
-
-#### Mirrors usados
-
-El script `setup_datasets.py` descarga de estos mirrors públicos:
-
-| Dataset    | Slug Kaggle                                                       | Licencia        |
-|------------|-------------------------------------------------------------------|-----------------|
-| DRIVE      | `umairinayat/retinal-vessel-segmentation-datasets`                | Académica       |
-| STARE      | `umairinayat/retinal-vessel-segmentation-datasets`                | Dominio público |
-| CHASE_DB1  | `khoongweihao/chasedb1`                                           | CC BY 4.0       |
-
----
-
-## Ejecución en Google Colab
-
-El repo incluye `colab_runner.ipynb` para ejecutar todo en GPU sin instalar nada localmente. Usa el badge **"Open In Colab"** al inicio de este README, o:
-
-1. Ve a <https://colab.research.google.com/> → **File → Open notebook → GitHub**.
-2. Pega la URL de tu repo y selecciona `colab_runner.ipynb`.
-3. **Entorno de ejecución → Cambiar tipo → GPU L4** (o T4 si no hay L4).
-4. Ejecuta la celda 1: pega tu token de Kaggle (formato `KGAT_...`) cuando te lo pida. El input es invisible (getpass) por seguridad.
-5. Edita `REPO_URL` en la celda 2 y ejecútala.
-
-La celda 2 hace todo el trabajo: clona el repo, instala dependencias, descarga datasets, entrena y evalúa. No requiere intervención manual.
-
-### ¿Qué GPU elegir en Colab Pro?
-
-Para este proyecto (Attention U-Net, batch 4, 512×512, 100 épocas, ~33M parámetros):
-
-| GPU  | VRAM  | CU/h  | Tiempo total | Recomendación |
-|------|-------|-------|--------------|---------------|
-| **T4**  | 16 GB | 1.96  | 5-6 h (~11 CU)  | Default seguro |
-| **L4**  | 24 GB | 4-5   | 2-3 h (~12 CU)  | **Mejor relación tiempo/CU** |
-| A100 | 40 GB | 10-15 | 1.5-2 h (~25 CU) | Solo si tienes prisa |
-| H100 | 80 GB | premium | ~1 h         | Sobredimensionada |
-| TPU  | —     | 1.76  | N/A          | **NO usar** (hooks + Attention Gates no son XLA-friendly) |
-
-No actives "RAM amplia" — la RAM estándar (12 GB) sobra y ahorras CU.
-
----
-
-## Estructura de datasets
-
-Los datasets se descargan automáticamente al ejecutar `run_all.sh` y se organizan en `data/` con esta estructura:
-
-```
+```text
 data/
 ├── drive/
-│   ├── training/{images, 1st_manual, mask}/   20 archivos c/u
-│   └── test/{images, 1st_manual, mask}/        20 archivos c/u
 ├── chase_db1/
-│   ├── images/                                  28 imágenes .jpg
-│   └── labels/                                  28 máscaras 1stHO .png
 └── stare/
-    ├── images/                                  20 imágenes .ppm
-    ├── labels-ah/                               20 anotador Adam Hoover
-    └── labels-vk/                               20 anotador Valentina Kouznetsova
 ```
 
-**Descarga manual** (si Kaggle no está disponible): puedes colocar los archivos manualmente en estas rutas. Fuentes oficiales para cada uno:
-- DRIVE: <https://drive.grand-challenge.org/> (requiere registro)
-- CHASE_DB1: <https://researchdata.kingston.ac.uk/96/> (CC BY 4.0, sin registro)
-- STARE: <https://cecas.clemson.edu/~ahoover/stare/> (dominio público)
-
-Citación CHASE_DB1: Fraz, M.M. et al., "An Ensemble Classification-Based Approach Applied to Retinal Blood Vessel Segmentation", IEEE TBME 2012.
-
----
-
-## Ejecución por partes (avanzado)
-
-Para iterar en componentes individuales después de tener el modelo entrenado:
+Finalmente ejecuta:
 
 ```bash
-# Solo entrenar el modelo principal
-python src/train.py --config configs/train_attention_unet.yaml
-
-# Solo evaluar (requiere checkpoint previo)
-python scripts/evaluate.py \
-    --config configs/train_attention_unet.yaml \
-    --checkpoint outputs/attention_unet_drive/best_model.pt \
-    --out_dir results/eval
-
-# Solo análisis por grosor
-python scripts/vessel_thickness_analysis.py \
-    --config configs/train_attention_unet.yaml \
-    --checkpoint outputs/attention_unet_drive/best_model.pt \
-    --out_dir results/vessel_thickness
-
-# Solo experimento de dominio
-python scripts/domain_adaptation.py \
-    --config configs/train_attention_unet.yaml \
-    --checkpoint outputs/attention_unet_drive/best_model.pt \
-    --chase_root data/chase_db1 \
-    --out_dir results/domain_adaptation
+bash run_all.sh
 ```
 
 ---
 
-## Reproducibilidad
+## 7. Qué hace `run_all.sh`
 
-- Todas las semillas (`random`, `numpy`, `torch`, `cuda`) se fijan en 42.
-- `torch.backends.cudnn.deterministic = True`.
-- Los splits son fijos (DRIVE) o reproducibles vía `torch.Generator().manual_seed(42)` (CHASE_DB1).
+El archivo `run_all.sh` es el comando único de reproducción. Ejecuta los siguientes pasos:
 
----
+```text
+[0/8] Verifica entorno e instala dependencias
+[1/8] Valida datasets montados en data/
+[2/8] Entrena Attention U-Net en DRIVE
+[3/8] Ejecuta ablaciones: U-Net base, BCE, Dice, BCE+Dice
+[4/8] Evalúa modelos en DRIVE local
+[5/8] Genera análisis por grosor, mapas de atención y curvas
+[6/8] Evalúa generalización DRIVE → CHASE_DB1
+[7/8] Ejecuta análisis inter-anotador STARE si existen AH/VK
+[8/8] Imprime resumen final de resultados
+```
 
-## Métricas implementadas
+El paso de dominio ejecuta:
 
-`src/utils/metrics.py` calcula:
-
-- **Sensibilidad** (Recall / TPR) — fracción de vasos detectados
-- **Especificidad** (TNR) — fracción de fondo correctamente clasificado
-- **F1 (Dice)** — balance precisión/recall, métrica primaria
-- **AUC-ROC** — capacidad discriminativa global (sobre probabilidades)
-- **IoU (Jaccard)** — solapamiento
-- **Accuracy** — precisión píxel a píxel
-
----
-
-## Licencia y datasets
-
-Este código se publica bajo MIT License. Los datasets tienen sus propias licencias:
-
-- DRIVE: uso académico/no-comercial, requiere registro
-- CHASE_DB1: CC BY 4.0
-- STARE: dominio público (uso académico)
+```bash
+python scripts/domain_adaptation.py \
+  --config configs/train_attention_unet.yaml \
+  --checkpoint outputs/attention_unet_drive/best_model.pt \
+  --chase_root data/chase_db1 \
+  --out_dir results/domain_adaptation \
+  --finetune_ratio 0.25
+```
 
 ---
 
-## Referencias principales
+## 8. Resultados generados
 
-1. Ronneberger, O., Fischer, P., Brox, T. *U-Net: Convolutional Networks for Biomedical Image Segmentation*. MICCAI 2015.
-2. Oktay, O. et al. *Attention U-Net: Learning Where to Look for the Pancreas*. MIDL 2018.
-3. Staal, J. et al. *Ridge-Based Vessel Segmentation in Color Images of the Retina*. IEEE TMI 2004 (DRIVE).
-4. Fraz, M.M. et al. *An Ensemble Classification-Based Approach Applied to Retinal Blood Vessel Segmentation*. IEEE TBME 2012 (CHASE_DB1).
-5. Hoover, A. et al. *Locating Blood Vessels in Retinal Images by Piecewise Threshold Probing of a Matched Filter Response*. IEEE TMI 2000 (STARE).
-6. Milletari, F., Navab, N., Ahmadi, S.-A. *V-Net: Fully Convolutional Neural Networks for Volumetric Medical Image Segmentation*. 3DV 2016 (Dice loss).
+### 8.1 Carpeta `outputs/`
+
+Contiene checkpoints, métricas JSON e historiales de entrenamiento:
+
+```text
+outputs/
+├── attention_unet_drive/
+│   ├── best_model.pt
+│   ├── test_metrics.json
+│   └── training_history.json
+├── unet_base_drive/
+│   ├── best_model.pt
+│   ├── test_metrics.json
+│   └── training_history.json
+├── ablation_bce/
+├── ablation_dice/
+└── ablation_combined/
+```
+
+### 8.2 Carpeta `results/`
+
+Contiene figuras, análisis visuales y reportes derivados:
+
+```text
+results/
+├── attention_unet_drive/
+│   ├── predictions.png
+│   ├── roc_curve.png
+│   └── failure_analysis.png
+├── unet_base_drive/
+├── attention_maps/
+│   ├── attention_map_01.png
+│   ├── attention_map_02.png
+│   └── attention_map_03.png
+├── vessel_thickness/
+│   ├── vessel_thickness_results.json
+│   ├── sensitivity_by_thickness.png
+│   └── thickness_visualization.png
+├── training_curves/
+└── domain_adaptation/
+```
+
+---
+
+## 9. Resultados finales obtenidos
+
+### 9.1 Comparación de arquitecturas en DRIVE local
+
+| Modelo | Sensibilidad | Especificidad | Precisión | F1 / Dice | IoU | Accuracy | AUC-ROC |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Attention U-Net | 0.7598 | 0.9360 | 0.6383 | 0.6937 | 0.5327 | 0.9129 | 0.9258 |
+| U-Net base | 0.7701 | 0.9337 | 0.6353 | 0.6962 | 0.5356 | 0.9123 | 0.9254 |
+
+### 9.2 Ablación de pérdidas
+
+| Pérdida | Sensibilidad | Especificidad | Precisión | F1 / Dice | IoU | Accuracy | AUC-ROC |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| BCE | 0.8732 | 0.8465 | 0.4603 | 0.6026 | 0.4318 | 0.8499 | 0.9297 |
+| Dice | 0.8508 | 0.8156 | 0.4082 | 0.5516 | 0.3812 | 0.8202 | 0.9076 |
+| BCE+Dice | 0.8754 | 0.8439 | 0.4571 | 0.6003 | 0.4295 | 0.8480 | 0.9296 |
+
+### 9.3 Generalización DRIVE → CHASE_DB1
+
+| Configuración | Sensibilidad | Especificidad | F1 / Dice | AUC-ROC |
+|---|---:|---:|---:|---:|
+| Sin adaptación | 0.1094 | 0.9961 | 0.1833 | 0.7246 |
+| + CLAHE | 0.3976 | 0.9766 | 0.4789 | 0.7827 |
+| + Fine-tuning 25% CHASE_DB1 | 0.7690 | 0.9431 | 0.6500 | 0.9229 |
+
+### 9.4 Análisis por grosor de vaso
+
+| Tipo de vaso | Definición | Sensibilidad media |
+|---|---|---:|
+| Fino | radio ≤ 2 px | 0.7526 ± 0.0539 |
+| Medio | 2 < radio ≤ 4 px | 0.9795 ± 0.0320 |
+| Grueso | radio > 4 px | 0.9498 ± 0.1334 |
+
+---
+
+## 10. Interpretación resumida
+
+- U-Net base obtuvo el mejor F1 local, aunque la diferencia con Attention U-Net fue mínima.
+- Attention U-Net fue útil para interpretación mediante mapas de atención.
+- BCE y BCE+Dice aumentaron la sensibilidad, pero redujeron precisión y especificidad, evidenciando sobresegmentación.
+- Dice puro fue la pérdida menos competitiva en F1 e IoU.
+- La generalización directa DRIVE → CHASE_DB1 fue débil, con F1 = 0.1833.
+- CLAHE redujo parte de la brecha de dominio, elevando F1 a 0.4789.
+- Fine-tuning con 25% de CHASE_DB1 logró F1 = 0.6500 y AUC = 0.9229.
+- Los vasos finos fueron los más difíciles de segmentar por el downsampling de U-Net y la baja representación de capilares en píxeles.
+
+---
+
+## 11. Reproducibilidad
+
+- Semilla fija: `42`.
+- Configuración por YAML en `configs/`.
+- Métricas guardadas como JSON.
+- Resultados y figuras generados automáticamente.
+- El pipeline puede ejecutarse con:
+
+```bash
+bash run_all.sh
+```
+
+En Colab, se recomienda usar `colab_runner.ipynb`, que prepara rutas, symlinks y respaldo de resultados.
+
+---
+
+## 12. Archivos que no deben subirse a GitHub
+
+El repositorio debe excluir:
+
+```text
+data/
+outputs/
+results/
+logs/
+*.pt
+*.pth
+*.ckpt
+```
+
+Estas carpetas se generan o se montan durante la ejecución y pueden ser muy pesadas.
+
+---
+
+## 13. Referencias principales
+
+1. Ronneberger, O., Fischer, P., Brox, T. **U-Net: Convolutional Networks for Biomedical Image Segmentation**. MICCAI, 2015.
+2. Oktay, O. et al. **Attention U-Net: Learning Where to Look for the Pancreas**. MIDL, 2018.
+3. Staal, J. et al. **Ridge-Based Vessel Segmentation in Color Images of the Retina**. IEEE Transactions on Medical Imaging, 2004.
+4. Hoover, A., Kouznetsova, V., Goldbaum, M. **Locating Blood Vessels in Retinal Images by Piecewise Threshold Probing of a Matched Filter Response**. IEEE Transactions on Medical Imaging, 2000.
+5. Fraz, M.M. et al. **An Ensemble Classification-Based Approach Applied to Retinal Blood Vessel Segmentation**. IEEE Transactions on Biomedical Engineering, 2012.
+6. DRIVE Grand Challenge. <https://drive.grand-challenge.org/>
+7. STARE Project. <https://cecas.clemson.edu/~ahoover/stare/>
+8. CHASE_DB1 / Kingston Research Data. <https://researchdata.kingston.ac.uk/96/>
+
+---
+
+## 14. Licencia
+
+Este repositorio contiene código académico desarrollado para el curso de Redes Neuronales y Aprendizaje Profundo. Los datasets conservan sus propias condiciones de uso y licencias.
