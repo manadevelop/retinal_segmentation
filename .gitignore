@@ -1,4 +1,6 @@
 # Outputs y resultados (regenerables, peso elevado)
+outputs/
+results/
 logs/
 
 # Pesos del modelo
